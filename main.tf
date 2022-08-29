@@ -1,7 +1,9 @@
+#OKAY
 provider "aws" {
   region = var.aws_region
 }
 
+#https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/availability_zones
 data "aws_availability_zones" "available" {
   state = "available"
 
@@ -17,6 +19,7 @@ module "vpc" {
 
   cidr = var.vpc_cidr_block
 
+  #https://www.terraform.io/language/functions/slice
   azs             = data.aws_availability_zones.available.names
   private_subnets = slice(var.private_subnet_cidr_blocks, 0, var.private_subnets_per_vpc)
   public_subnets  = slice(var.public_subnet_cidr_blocks, 0, var.public_subnets_per_vpc)
@@ -35,7 +38,7 @@ module "app_security_group" {
   description = "Security group for web-servers with HTTP ports open within VPC"
   vpc_id      = module.vpc.vpc_id
 
-  ingress_cidr_blocks = module.vpc.public_subnets_cidr_blocks
+  ingress_cidr_blocks = module.vpc.public_subnets_cidr_blocks ####????????????
 }
 
 module "lb_security_group" {
@@ -67,8 +70,8 @@ module "elb_http" {
   security_groups = [module.lb_security_group.security_group_id]
   subnets         = module.vpc.public_subnets
 
-  number_of_instances = 2
-  instances           = [aws_instance.app_a.id, aws_instance.app_b.id]
+  number_of_instances = length(aws_instance.app) ####REALLY ?????
+  instances           = aws_instance.app.*.id
 
   listener = [{
     instance_port     = "80"
@@ -96,13 +99,15 @@ data "aws_ami" "amazon_linux" {
   }
 }
 
-resource "aws_instance" "app_a" {
+resource "aws_instance" "app" {
   depends_on = [module.vpc]
+
+  count = var.instances_per_subnet * length(module.vpc.private_subnets)
 
   ami           = data.aws_ami.amazon_linux.id
   instance_type = var.instance_type
 
-  subnet_id              = module.vpc.private_subnets[0]
+  subnet_id              = module.vpc.private_subnets[count.index % length(module.vpc.private_subnets)]
   vpc_security_group_ids = [module.app_security_group.security_group_id]
 
   user_data = <<-EOF
@@ -121,6 +126,7 @@ resource "aws_instance" "app_a" {
   }
 }
 
+/*
 resource "aws_instance" "app_b" {
   depends_on = [module.vpc]
 
@@ -145,3 +151,4 @@ resource "aws_instance" "app_b" {
     Environment = var.environment
   }
 }
+*/
